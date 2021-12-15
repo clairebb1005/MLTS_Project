@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
-from util import train_val_test_split, get_model, format_predictions, calculate_metrics
-from torch.utils.data import TensorDataset, DataLoader
+from util.util import train_val_test_split, get_model, format_predictions, calculate_metrics
+from torch.utils.data import DataLoader
 import torch.optim as optim
-from optimization import Optimization
+from optimization.optimization import Optimization
 from sequential_dataset import SequenceDataset
 
 df = pd.read_csv('data.csv')
