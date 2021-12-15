@@ -2,6 +2,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from models.LSTM import LSTMModel
 from models.GRU import GRUModel
+from models.BiLSTM import BiLSTM
 import numpy as np
 import pandas as pd
 
@@ -23,6 +24,7 @@ def train_val_test_split(df, target_col, test_ratio):
 def get_model(model, model_params):
     models = {
         "lstm": LSTMModel,
+        "bilstm": BiLSTM,
         "gru": GRUModel,
     }
     return models.get(model.lower())(**model_params)
