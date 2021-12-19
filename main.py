@@ -2,21 +2,37 @@ import torch
 import torch.nn as nn
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
-from util.util import train_val_test_split, get_model, format_predictions, calculate_metrics
+import numpy as np
+from util.util import train_val_test_split, get_model, format_predictions, calculate_metrics, \
+    remove_outlier, generate_cyclical_features
 from torch.utils.data import DataLoader
 import torch.optim as optim
 from optimization.optimization import Optimization
 from sequential_dataset import SequenceDataset
 
-df = pd.read_csv('data.csv')
+df = pd.read_csv('data/inputdata.csv')
+df.set_index("Label",inplace=True)
+print(df.head())
+print(df.info())
 
 torch.manual_seed(99)
 
+# cyclical for hours using sin, cos
+df = generate_cyclical_features(df, 'Hour', 24, 0)
+print(df.head())
+
+# handling outlier or inf
+low_kWh, high_kWh = remove_outlier(df['Total_Energy_kWh'])
+df['Total_Energy_kWh'] = np.where(df["Total_Energy_kWh"]>high_kWh, high_kWh, df["Total_Energy_kWh"])
+df['Total_Energy_kWh'] = np.where(df["Total_Energy_kWh"]<low_kWh, low_kWh, df["Total_Energy_kWh"])
+print(df.head())
+
+df.to_csv("data/output.csv")
 # separating train, test and evaluation set
 # make sure target is being split into hours
-# X : year    month    day    hour    holiday
+# X : year    month    day    hour    holiday  weekday
 # y : power consumption
-X_train, X_val, X_test, y_train, y_val, y_test = train_val_test_split(df, 'power_consumption', 0.2)
+X_train, X_val, X_test, y_train, y_val, y_test = train_val_test_split(df, 'Total_Energy_kWh', 0.2)
 
 # data normalization
 scaler = MinMaxScaler()
@@ -32,18 +48,18 @@ y_test_arr = scaler.transform(y_test)
 sequence_length = 30
 
 train_dataset = SequenceDataset(
-    target=X_train_arr,
-    features=y_train_arr,
+    target=y_train_arr,
+    features=X_train_arr,
     sequence_length=sequence_length
 )
 test_dataset = SequenceDataset(
-    target=X_test_arr,
-    features=y_test_arr,
+    target=y_test_arr,
+    features=X_test_arr,
     sequence_length=sequence_length
 )
 val_dataset = SequenceDataset(
-    target=X_val_arr,
-    features=y_val_arr,
+    target=y_val_arr,
+    features=X_val_arr,
     sequence_length=sequence_length
 )
 
@@ -88,13 +104,13 @@ opt.train(train_loader, val_loader, batch_size=batch_size, n_epochs=n_epochs, n_
 
 # plot out the losses with matplotlib
 opt.plot_losses()
-
-# testing our model
-predictions, values = opt.evaluate(test_loader, batch_size=batch_size, n_features=input_dim)
-
-# inverse the predictions back to our original value
-df_result = format_predictions(predictions, values, X_test, scaler)
-# df_result.to_csv(r'data\export_result.csv', index=False)
-
-# calculate error metrics
-result_metrics = calculate_metrics(df_result)
+#
+# # testing our model
+# predictions, values = opt.evaluate(test_loader, batch_size=batch_size, n_features=input_dim)
+#
+# # inverse the predictions back to our original value
+# df_result = format_predictions(predictions, values, X_test, scaler)
+# # df_result.to_csv(r'data\export_result.csv', index=False)
+#
+# # calculate error metrics
+# result_metrics = calculate_metrics(df_result)

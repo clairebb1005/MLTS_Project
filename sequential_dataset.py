@@ -3,12 +3,12 @@ from torch.utils.data import Dataset
 
 
 class SequenceDataset(Dataset):
-    def __init__(self, target, features, sequence_length=5):
+    def __init__(self, target, features, sequence_length=30):
         self.features = features
         self.target = target
         self.sequence_length = sequence_length
-        self.y = torch.tensor(target.values).float()
-        self.X = torch.tensor(features.values).float()
+        self.y = torch.tensor(target).float()
+        self.X = torch.tensor(features).float()
 
     def __len__(self):
         return self.X.shape[0]

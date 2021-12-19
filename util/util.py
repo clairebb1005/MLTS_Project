@@ -1,5 +1,7 @@
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder
 from models.LSTM import LSTMModel
 from models.GRU import GRUModel
 from models.BiLSTM import BiLSTM
@@ -49,3 +51,20 @@ def calculate_metrics(df):
     return {'mae': mean_absolute_error(df.value, df.prediction),
             'rmse': mean_squared_error(df.value, df.prediction) ** 0.5,
             'r2': r2_score(df.value, df.prediction)}
+
+
+def generate_cyclical_features(df, col_name, period, start_num=0):
+    kwargs = {
+        f'sin_{col_name}': lambda x: np.sin(2 * np.pi * (df[col_name] - start_num) / period),
+        f'cos_{col_name}': lambda x: np.cos(2 * np.pi * (df[col_name] - start_num) / period)
+    }
+    return df.assign(**kwargs).drop(columns=[col_name])
+
+
+def remove_outlier(col):
+    sorted(col)
+    Q1, Q3 = col.quantile([0.25, 0.75])
+    IQR = Q3 - Q1
+    lower_range = Q1 - (1.5 * IQR)
+    upper_range = Q3 + (1.5 * IQR)
+    return lower_range, upper_range

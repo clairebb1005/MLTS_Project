@@ -74,7 +74,7 @@ class Optimization:
 
             # save only the model that improve the loss
             if validation_loss <= self.valid_loss_min:
-                torch.save(self.model.state_dict(), model_path)
+                torch.save(self.model.state_dict(), "models/{self.model}")
                 print('Validation loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(self.valid_loss_min,
                                                                                                 validation_loss))
                 self.valid_loss_min = validation_loss
