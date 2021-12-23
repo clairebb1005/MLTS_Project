@@ -9,6 +9,8 @@ class SequenceDataset(Dataset):
         self.sequence_length = sequence_length
         self.y = torch.tensor(target).float()
         self.X = torch.tensor(features).float()
+        # self.y = torch.tensor(target.to_numpy().astype(float)).float()
+        # self.X = torch.tensor(features.to_numpy().astype(float)).float()
 
     def __len__(self):
         return self.X.shape[0]

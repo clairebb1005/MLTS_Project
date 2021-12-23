@@ -1,25 +1,20 @@
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder
 from models.LSTM import LSTMModel
 from models.GRU import GRUModel
 from models.BiLSTM import BiLSTM
 import numpy as np
 import pandas as pd
+import torch.nn as nn
 
 
-def feature_label_split(df, target_col):
-    y = df[[target_col]]
-    X = df.drop(columns=[target_col])
-    return X, y
-
-
-def train_val_test_split(df, target_col, test_ratio):
-    val_ratio = test_ratio / (1 - test_ratio)
-    X, y = feature_label_split(df, target_col)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_ratio, shuffle=False)
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=val_ratio, shuffle=False)
+def train_val_test_split(df, target, ratio):
+    X = df.drop(columns=[target])
+    y = df[[target]]
+    # separate the test set
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=ratio, shuffle=False)
+    # separate the validation set
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=(ratio / (1 - ratio)), shuffle=False)
     return X_train, X_val, X_test, y_train, y_val, y_test
 
 
@@ -32,25 +27,30 @@ def get_model(model, model_params):
     return models.get(model.lower())(**model_params)
 
 
-def inverse_transform(scaler, df, columns):
-    for col in columns:
-        df[col] = scaler.inverse_transform(df[col])
+def loss_fn(loss):
+    loss_list = {
+        "l1": nn.L1Loss(),
+        "l2": nn.MSELoss(reduction="mean")
+    }
+    return loss_list[loss]
+
+
+def inverse_y_values(predictions, values, df_test, scalar):
+    values = np.concatenate(values, axis=0).ravel()
+    predictions = np.concatenate(predictions, axis=0).ravel()
+    df = pd.DataFrame(data={"y_test": values, "y_hat": predictions}, index=df_test.head(len(values)).index)
+    # sort the data by year-date-time
+    df = df.sort_index()
+    # inverse the value by the scalar that we used to normalize the data
+    for col in [["y_test", "y_hat"]]:
+        df[col] = scalar.inverse_transform(df[col])
     return df
 
 
-def format_predictions(predictions, values, df_test, scaler):
-    vals = np.concatenate(values, axis=0).ravel()
-    preds = np.concatenate(predictions, axis=0).ravel()
-    df_result = pd.DataFrame(data={"value": vals, "prediction": preds}, index=df_test.head(len(vals)).index)
-    df_result = df_result.sort_index()
-    df_result = inverse_transform(scaler, df_result, [["value", "prediction"]])
-    return df_result
-
-
 def calculate_metrics(df):
-    return {'mae': mean_absolute_error(df.value, df.prediction),
-            'rmse': mean_squared_error(df.value, df.prediction) ** 0.5,
-            'r2': r2_score(df.value, df.prediction)}
+    return {'mae': mean_absolute_error(df.y_test, df.y_hat),
+            'rmse': mean_squared_error(df.y_test, df.y_hat) ** 0.5,
+            'r2': r2_score(df.y_test, df.y_hat)}
 
 
 def generate_cyclical_features(df, col_name, period, start_num=0):

@@ -1,0 +1,19 @@
+experiment_name: LSTM
+
+data_config:
+        inputdata_path: "data/inputdata_oneyear.csv"
+        outputdata_path: "data/output_preprocessed_one_year.csv"
+        ratio: 0.3
+        output_predict_path: "output/export_result_lstm_one_year.csv"
+model_config:
+        input_dim: 7
+        output_dim: 1
+        hidden_dim: 16
+        layer_dim: 2
+        batch_size : 512
+        dropout : 0.3
+        epoch : 30
+        lr : 1.0e-3
+        weight_decay: 0
+        model: "lstm"
+        loss: "l1"
