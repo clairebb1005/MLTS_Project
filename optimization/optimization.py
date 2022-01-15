@@ -5,14 +5,18 @@ from matplotlib import pyplot as plt
 
 
 class Optimization:
-    def __init__(self, model, loss, optimizer):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def __init__(self, model, loss, optimizer, early_stopping_patience=20):
+        self._cuda = torch.cuda.is_available()
+        print(f"self._cuda={self._cuda}")
+        self.device = torch.device("cuda" if self._cuda else "cpu")
         self.model = model
         self.loss = loss
         self.optimizer = optimizer
         self.train_loss = []
         self.validation_loss = []
         self.valid_loss_min = np.inf
+        self._early_stopping_patience = early_stopping_patience
+        self.best_epoch = None
 
     def train_step(self, x, y):
         # Sets model to train mode
@@ -36,61 +40,95 @@ class Optimization:
         # Returns the loss
         return loss.item()
 
+    def save_checkpoint(self, epoch):
+        torch.save({'state_dict': self.model.state_dict()}, 'checkpoints/checkpoint_{:03d}.ckp'.format(epoch))
+
+    def restore_checkpoint(self, epoch_n):
+        print(f"Load the model of epoch = {epoch_n} for testing")
+        ckp = torch.load('checkpoints/checkpoint_{:03d}.ckp'.format(epoch_n), 'cuda' if self._cuda else None)
+        self.model.load_state_dict(ckp['state_dict'])
+
     # allows the network's weights to be updated
-    def train(self, train_loader, val_loader, batch_size=512, epoch=30, num_features=1):
-        for epoch in range(1, epoch + 1):
-            batch_losses = []
-            for x_batch, y_batch in train_loader:
-                x_batch = x_batch.view([batch_size, -1, num_features]).to(self.device)
-                y_batch = y_batch.to(self.device)
+    def train(self, train_loader, val_loader, epochs=30):
+        # iterate through each epoch
+        for epoch in range(epochs):
+            batch_train_losses = []
+            for batch_idx, (x_batch, y_batch) in enumerate(train_loader, 0):
+                x_batch = x_batch.to(device=self.device)
+                y_batch = y_batch.to(device=self.device)
                 # train the model and calculate the gradient and loss
-                loss = self.train_step(x_batch, y_batch)
+                train_loss = self.train_step(x_batch, y_batch)
                 # append the loss of each batch
-                batch_losses.append(loss)
-            # append the batch loss of each epoch
-            training_loss = np.mean(batch_losses)
+                batch_train_losses.append(train_loss)
+
+            # append the mean of batch losses of current epoch
+            training_loss = np.mean(batch_train_losses)
             self.train_loss.append(training_loss)
 
-            # no need to calculate the gradients, just want to see the scores after this training epoch
-            with torch.no_grad():
-                batch_val_losses = []
-                for x_val, y_val in val_loader:
-                    # load the data to gpu
-                    x_val = x_val.view([batch_size, -1, num_features]).to(self.device)
-                    y_val = y_val.to(self.device)
-                    self.model.eval()
-                    y_hat = self.model(x_val)
-                    val_loss = self.loss(y_val, y_hat).item()
-                    batch_val_losses.append(val_loss)
-                validation_loss = np.mean(batch_val_losses)
-                self.validation_loss.append(validation_loss)
+            validation_loss = self.evaluation(val_loader)
 
             if epoch % 10 == 0:
                 print(
-                    f"[{epoch}/{epoch}] Training loss: {training_loss:.4f}\t Validation loss: {validation_loss:.4f}"
+                    f"[Epoch:{epoch}/{epochs}], "
+                    f"Training loss: {training_loss:.4f}\t "
+                    f"Validation loss: {validation_loss:.4f}"
                 )
 
-            # save only the model that improve the loss
-            if validation_loss <= self.valid_loss_min:
-                torch.save(self.model.state_dict(), f'models/lstm')
-                print('Validation loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(self.valid_loss_min,
-                                                                                                validation_loss))
+            # EarlyStop:
+            # If the validation loss does not decrease after a specified number of epochs,
+            # then the training process will be stopped.
+            # check whether the current loss is lower than the previous best value.
+            if validation_loss < self.valid_loss_min:
                 self.valid_loss_min = validation_loss
+                self.best_epoch = epoch
+                print('Validation loss decreased ({:.6f} --> {:.6f}). Save the model of current best epoch {} '.format(self.valid_loss_min, validation_loss, self.best_epoch))
+                # save only the model that improve the loss
+                self.save_checkpoint(epoch)
 
-    def evaluate(self, test_loader, batch_size=512, n_features=1):
+            # if not, count up for how long there was no progress
+            else:
+                self._early_stopping_patience -= 1
+
+            # check whether early stopping should be performed and stop if so
+            if self._early_stopping_patience < 0:
+                print(f"Execute early_stopping and return the best_epoch ={self.best_epoch}")
+                return self.best_epoch
+
+        return self.best_epoch
+
+    def evaluation(self, val_loader):
+        # no need to calculate the gradients, just want to see the scores after this training epoch
+        with torch.no_grad():
+            batch_val_losses = []
+            for batch_idx, (x_val, y_val) in enumerate(val_loader, 0):
+                # load a batch of data to gpu
+                x_val = x_val.to(device=self.device)
+                y_val = y_val.to(device=self.device)
+                # turn model into evaluation mode
+                self.model.eval()
+                y_hat = self.model(x_val)
+                val_loss = self.loss(y_val, y_hat).item()
+                batch_val_losses.append(val_loss)
+            validation_loss = np.mean(batch_val_losses)
+            self.validation_loss.append(validation_loss)
+            return validation_loss
+
+    def test(self, test_loader, best_epoch):
+        # load the best model from training
+        self.restore_checkpoint(epoch_n=best_epoch)
         # Here we don't need to train, so the code is wrapped in torch.no_grad()
-        self.model.load_state_dict(torch.load(f'models/lstm'))
         with torch.no_grad():
             predictions = []
             values = []
             for x_test, y_test in test_loader:
-                x_test = x_test.view([batch_size, -1, n_features]).to(self.device)
-                y_test = y_test.to(self.device)
+                x_test = x_test.to(device=self.device)
+                y_test = y_test.to(device=self.device)
+                # turn model into evaluation mode
                 self.model.eval()
-                y_hat = self.model(x_test)  # prediction of testing
-                predictions.append(y_hat.to(self.device).detach().numpy())
-                values.append(y_test.to(self.device).detach().numpy())
-
+                # prediction of test data
+                y_hat = self.model(x_test)
+                predictions.append(y_hat.cpu().detach().numpy())
+                values.append(y_test.cpu().detach().numpy())
         return predictions, values
 
     def plot_loss(self):
@@ -98,4 +136,3 @@ class Optimization:
         plt.plot(self.validation_loss, label="Validation loss of each epoch")
         plt.title("Loss")
         plt.savefig('output/plot_loss.png')
-        # plt.show()
